@@ -4,7 +4,7 @@ This file describes which messages are used for communication between the heater
 
 Planar/Autoterm 4D/44D and PU-27 controller were used.
 
-For better understanding the "Payload" and "Checksum" parts are separeted with "|".
+For better understanding the "Payload" and "Checksum" parts are separeted with `|`.
 
 ### Initialization:
 These messages are used after connecting the controller to the heater. They probably contain information about the type of heater and controller.
