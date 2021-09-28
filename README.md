@@ -16,7 +16,7 @@ Message structure:
 * byte 4: message ID2
 * byte 5+: payload
 
-Last two bytes are CRC16 (little endian Modbus) counted from all the bytes.
+Last two bytes are checksum (CRC16, little endian Modbus) counted from all the bytes.
 
 ### Forwarding messages
 Then I tried to detect and read the whole message for a better understanding. You can find the program in utils/message_passthrough.py. It detects a valid message that starts with 0xAA, then it reads the “device” byte and payload length, and the rest of the message. You can find further information about messages in [messages_controller.md](messages/messages_controller.md) file. 
