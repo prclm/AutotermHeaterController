@@ -74,6 +74,6 @@ After the diagnostic mode is switched on, the heater periodically sends messages
 Diagnostic mode could be switch off with this message.
 
 ```
-PC >> H   aa03010007 00 dd5f
- H >> PC  aa04010007 00 1dea
+PC >> H   aa 03 01 00 07 | 00 | dd 5f
+ H >> PC  aa 04 01 00 07 | 00 | 1d ea
 ```
