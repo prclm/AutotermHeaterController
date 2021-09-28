@@ -4,10 +4,10 @@ This file describes which messages are used for communication between the heater
 
 Planar/Autoterm 4D/44D and PU-27 controller were used.
 
+For better understanding the "Payload" and "Checksum" parts are separeted with "|".
+
 ### Initialization:
 These messages are used after connecting the controller to the heater. They probably contain information about the type of heater and controller.
-
-For better understanding the "Payload" and "Checksum" parts are separeted with "|".
 
 ```
 C >> H  1b
@@ -40,16 +40,16 @@ C >> H aa 03 00 00 0f | 58 7c
 H >> C aa 04 0a 00 0f | 00 01 00 1a 7f 00 7b 01 2b 00 | 50 ad
                         st       ht et    bv ct ct
 ```
-- 'st': Status
-  - '00': Heater off
-  - '01': Starting
-  - '02': Warming up
-  - '03': Running
-  - '04': Shutting down
-- 'ht': Heater temperature (as single byte in °C)
-- 'et': External temperature (as single byte in °C, 7f when disconnected)
-- 'bv': Battery voltage (as voltage * 10)
-- 'ct': Heater chamber temperature (as two bytes, big endian, in Kelvin)
+- `st`: Status
+  - `00`: Heater off
+  - `01`: Starting
+  - `02`: Warming up
+  - `03`: Running
+  - `04`: Shutting down
+- `ht`: Heater temperature (as single byte in °C)
+- `et`: External temperature (as single byte in °C, 7f when disconnected)
+- `bv`: Battery voltage (as voltage * 10)
+- `ct`: Heater chamber temperature (as two bytes, big endian, in Kelvin)
 
 ### Controller temperature:
 These messages are used by the controller to report the temperature to the heater. Heater confirms and repeat the same temperature.
@@ -59,7 +59,7 @@ C >> H  aa 03 01 00 11 | 1a | 76 d0
 H >> C  aa 04 01 00 11 | 1a | b6 65
                          ct
 ```
-- 'ct': Controller temperature (as single byte in °C)
+- `ct`: Controller temperature (as single byte in °C)
 
 ### Get/set settings:
 The controller asks the heater for the current setting.
@@ -108,7 +108,7 @@ H >> C  aa 04 04 00 23 | 00 78 02 3b | 09 cd
 - `pl`: Power level (0-9)
 
 ### Start heater:
-
+This message turns on the heater with selected settings. Heater confirms it in response. It is sent twice in short succession. 
 ```
 C >> H  aa 03 06 00 01 | ff ff 04 0f 00 02 | b8 5e
 H >> C  aa 04 06 00 01 | 00 78 04 0f 00 02 | 73 4f
