@@ -15,6 +15,7 @@ Message structure:
 * byte 3: message ID1 (so far always 0x00)
 * byte 4: message ID2
 * byte 5+: payload
+
 Last two bytes are CRC16 (little endian Modbus) counted from all the bytes.
 
 ### Forwarding messages
