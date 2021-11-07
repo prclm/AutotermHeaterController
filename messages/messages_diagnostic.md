@@ -22,6 +22,44 @@ Message sent periodically by PC without any heater response.
 PC >> H   aa 02 00 00 00 | a0 3d
 ```
 
+### Get heater software version:
+Message sent from PC diagnostic software to find out heater software version.
+```
+PC >> H   aa 03 00 00 06 | 5e bc
+ H >> PC  aa 04 05 00 06 | 03 01 0e 02 03 | 62 c1 
+                           v1 v2 v3 v4
+```
+Software version consicts of `v1`.`v2`.`v3`.`v4` e.g. `3.1.14.2` 
+
+### Heater errors:
+Message sent by PC to list heater errors.
+```
+PC >> H   aa 03 00 00 0f | 58 7c
+ H >> PC  aa 04 0a 00 0f | 00 01 00 1d 7f 00 7d 01 41 00 | b8 f5
+```
+In this case no errors were found.
+```
+PC >> H   aa 03 00 00 0f | 58 7c
+ H >> PC  aa 04 0a 00 0f | 00 01 1e 18 7f 00 7c 01 42 00 | 34 21
+                                 er
+```
+This message contain error 30 information.
+
+### Unblock button
+Messege sent after "Unblock" button in the diagnostics software is pressed.
+```
+PC >> H   aa 03 00 00 0d | 99 fd
+ H >> PC  aa 00 00 00 0d | dd fd
+```
+
+### Controlling heater:
+This message is sent by PC to turn the heater on.
+
+```
+PC >> H   aa 03 02 00 01 | 00 28 | 27 39
+ H >> PC  aa 04 06 00 01 | 00 28 04 0f 00 05 | bdce
+```
+
 ### Ventilation mode control:
 This message is sent by PC to turn the ventilation mode on.
 
