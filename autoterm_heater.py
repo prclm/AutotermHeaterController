@@ -10,8 +10,10 @@ import time
 ################
 versionMajor = 0
 versionMinor = 0
-versionPatch = 4
+versionPatch = 5
 ################
+
+status_text = {0:'heater off', 1:'starting', 2: 'warming up', 3:'running', 4:'shuting down'}
 
 class Message:
     def __init__(self, preamble, device, length, msg_id1, msg_id2, payload = b''):
@@ -60,7 +62,7 @@ class AutotermUtils:
         return Message(package[0], package[1], package[2], package[3], package[4], package[5:-2])
 
     def build(self, device, msg_id2, msg_id1=0x00, payload = b''):
-        if device not in [0x03, 0x04]:
+        if device not in [0x00, 0x02, 0x03, 0x04]:
             self.logger.error('Built: invalid device! ({})'.format(device))
             return 0
         if msg_id1 not in range(256):
@@ -162,6 +164,8 @@ class AutotermPassthrough(AutotermUtils):
 
         self.__settings_timer = time.time()
         self.__settings_delay = 5               # Sets how often raspberry asks for settings
+
+        self.__heater_software_version = (None, None, None, None)
         
         # Following values are stored in tuples with timestamp
         self.__heater_mode = (None, None)
@@ -234,7 +238,7 @@ class AutotermPassthrough(AutotermUtils):
             elif new_message.msg_id2 == 0x04:
                 self.logger.info('Controller sends initialization message')
             elif new_message.msg_id2 == 0x06:
-                self.logger.info('Controller sends initialization message')
+                self.logger.info('Controller asks for software version')
             elif new_message.msg_id2 == 0x0f:
                 self.logger.info('Controller asks for status')
             elif new_message.msg_id2 == 0x11:
@@ -272,7 +276,8 @@ class AutotermPassthrough(AutotermUtils):
             elif new_message.msg_id2 == 0x04:
                 self.logger.info('Heater responds to initialization message')
             elif new_message.msg_id2 == 0x06:
-                self.logger.info('Heater responds to initialization message')
+                self.__heater_software_version = (new_message.payload[0], new_message.payload[1], new_message.payload[2], new_message.payload[3])
+                self.logger.info('Heater reports software version')
             elif new_message.msg_id2 == 0x0f:
                 if len(new_message.payload) == 10:
                     self.__heater_status = (new_message.payload[0], time.time())
@@ -384,6 +389,9 @@ class AutotermPassthrough(AutotermUtils):
         return self.__battery_voltage
     def get_heater_status(self):
         return self.__heater_status
+    def get_heater_status_text(self):
+        if self.__heater_status[0] in status_text.keys():
+            return status_text[self.__heater_status[0]]
     def get_defined_rev(self):
         return self.__defined_rev
     def get_measured_rev(self):
@@ -402,7 +410,8 @@ class AutotermPassthrough(AutotermUtils):
         return self.__heater_ventilation
     def get_heater_power_level(self):
         return self.__heater_power_level
-    
+
+    # Heater and ventilation controlling
     def shutdown(self):
         self.__shutdown_request = True
 
@@ -429,6 +438,31 @@ class AutotermPassthrough(AutotermUtils):
             self.__send_to_heater.append(message)
             self.__send_to_heater.append(message)
             # Message is sent twice as from the controller
+
+    # Diagnostic utils
+    def unblock(self):
+        message = self.build(0x03, 0x0d)
+        if message != 0:
+            self.__send_to_heater.append(message)
+
+    def asks_for_version(self):
+        message = self.build(0x03, 0x06)
+        if message != 0:
+            self.__send_to_heater.append(message)
+    def get_version(self):
+        return self.__heater_software_version
+
+    def diagnostic_on(self):
+        payload = b'\x01'
+        message = self.build(0x03, 0x07, payload = payload)
+        if message != 0:
+            self.__send_to_heater.append(message)
+
+    def diagnostic_off(self):
+        payload = b'\x00'
+        message = self.build(0x03, 0x07, payload = payload)
+        if message != 0:
+            self.__send_to_heater.append(message)
 
 class AutotermController(AutotermUtils):
     def __init__(self, serial_port, baudrate, log_path):
