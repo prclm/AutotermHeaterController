@@ -37,7 +37,7 @@ Message sent by PC to list heater errors. In this case no errors were found.
 PC >> H   aa 03 00 00 0f | 58 7c
  H >> PC  aa 04 0a 00 0f | 00 01 00 1d 7f 00 7d 01 41 00 | b8 f5
 ```
-This message contain error 30 information.
+This message contains error 30 information.
 ```
 PC >> H   aa 03 00 00 0f | 58 7c
  H >> PC  aa 04 0a 00 0f | 00 01 1e 18 7f 00 7c 01 42 00 | 34 21
