@@ -6,6 +6,12 @@ import serial
 import threading
 import time
 
+################
+versionMajor = 0
+versionMinor = 0
+versionPatch = 2
+################
+
 class Message:
     def __init__(self, preamble, device, length, msg_id1, msg_id2, payload = b''):
         self.preamble = preamble
@@ -82,6 +88,8 @@ class AutotermPassthrough(AutotermUtils):
         handler.setLevel(logging.DEBUG)
         self.logger.addHandler(handler)
 
+        self.logger.info('AutotermPassthrough v 0.0.5 is starting.')
+
         self.__connect()
         self.__start_working()
 
@@ -108,19 +116,24 @@ class AutotermPassthrough(AutotermUtils):
         self.__heater_setpoint = False
         self.__heater_ventilation = False
         self.__heater_power_level = False
-        
         self.__ventilation_on = False
+
+        self.__shutdown_request = False
+        self.__shutdown_timer = time.time()
+        self.__shutdown_delay = 10
+        
         self.__heater_ser = None
         self.__controller_ser = None
-        self.__heater_send = []
+        self.__send_to_heater = []
 
-        self.__panel_temperature = None
-        self.__heater_temperature = None
-        self.__external_temperature = None
-        self.__battery_voltage = None
-        self.__heater_status = None
-        self.__defined_rev = None
-        self.__measured_rev = None
+        # Following values are stored in tuples with timestamp
+        self.__controller_temperature = (None, None)
+        self.__heater_temperature = (None, None)
+        self.__external_temperature = (None, None)
+        self.__battery_voltage = (None, None)
+        self.__heater_status = (None, None)
+        self.__defined_rev = (None, None)
+        self.__measured_rev = (None, None)
 
         #restart controller panel??
         
@@ -131,50 +144,54 @@ class AutotermPassthrough(AutotermUtils):
         self.__working = False
         self.__worker_thread.join(10.0)
 
-    def __process_message(self, message):
+    def __process_message(self, message, ser_message):
         new_message = self.parse(message)
         if new_message == 0:
             return 0
 
         if not self.__controller_ser or not self.__heater_ser:
             if new_message.device == 0x03:
-                self.__controller_ser = self.__ser1
+                self.__controller_ser = ser_message
             elif new_message.device == 0x04:
-                self.__heater_ser = self.__ser1
+                self.__heater_ser = ser_message
 
         if new_message.device == 0x00:
             self.logger.info('Inicialization message ({})'.format(message.hex()))
-            
+
+        # New message is from controller    
         elif new_message.device == 0x03:
+            # Do not send messages, waiting for response from the heater
             self.write_lock = True
 
             if   new_message.msg_id2 == 0x01:
-                self.logger.info('Panel turns heater on with settings {}'.format(new_message.payload[2:].hex()))
+                self.logger.info('Controller turns heater on with settings {}'.format(new_message.payload[2:].hex()))
             elif new_message.msg_id2 == 0x02:
                 if new_message.length == 0:
-                    self.logger.info('Panel asks for settings')
+                    self.logger.info('Controller asks for settings')
                 else:
-                    self.logger.info('Panel set new settings ({})'.format(new_message.payload[2:].hex()))
+                    self.logger.info('Controller set new settings ({})'.format(new_message.payload[2:].hex()))
             elif new_message.msg_id2 == 0x03:
-                self.logger.info('Panel turns off the heater')
+                self.logger.info('Controller turns off the heater')
             elif new_message.msg_id2 == 0x04:
-                self.logger.info('Panel sends initialization message')
+                self.logger.info('Controller sends initialization message')
             elif new_message.msg_id2 == 0x06:
-                self.logger.info('Panel sends initialization message')
+                self.logger.info('Controller sends initialization message')
             elif new_message.msg_id2 == 0x0f:
-                self.logger.info('Panel asks for status')      
+                self.logger.info('Controller asks for status')      
             elif new_message.msg_id2 == 0x11:
-                self.__panel_temperature = new_message.payload[0]
-                self.logger.info('Panel reports temperature {} °C'.format(new_message.payload[0]))
+                self.__controller_temperature = (new_message.payload[0], time.time())
+                self.logger.info('Controller reports temperature {} °C'.format(new_message.payload[0]))
             elif new_message.msg_id2 == 0x23:
-                self.logger.info('Panel turns ventilation on with settings {}'.format(new_message.payload[2:].hex()))     
+                self.logger.info('Controller turns ventilation on with settings {}'.format(new_message.payload[2:].hex()))     
             elif new_message.msg_id2 == 0x1c:
-                self.logger.info('Panel sends initialization message')
+                self.logger.info('Controller sends initialization message')
 
             else:
-                self.logger.warning('Unknown message: {}'.format(message.hex()))
+                self.logger.warning('Unknown message from controller: {}'.format(message.hex()))
 
+        # New message is from heater
         elif new_message.device == 0x04:
+            # Response from heater received, can send other messages
             self.write_lock = False
             
             if   new_message.msg_id2 == 0x01:
@@ -184,11 +201,12 @@ class AutotermPassthrough(AutotermUtils):
                 self.__heater_ventilation = new_message.payload[4]
                 self.__heater_power_level = new_message.payload[5]
                 self.logger.info('Heater confirms starting up ({})'.format(new_message.payload.hex()))
-            elif new_message.msg_id2 == 0x02:    
+            elif new_message.msg_id2 == 0x02:
                 self.logger.info('Heater reports settings ({})'.format(new_message.payload.hex()))
             elif new_message.msg_id2 == 0x03:
                 self.__heater_on = False
                 self.__ventilation_on = False
+                self.__shutdown_request = False
                 self.logger.info('Heater confirms turning off')
             elif new_message.msg_id2 == 0x04:
                 self.logger.info('Heater responds to initialization message')
@@ -196,29 +214,31 @@ class AutotermPassthrough(AutotermUtils):
                 self.logger.info('Heater responds to initialization message')
             elif new_message.msg_id2 == 0x0f:
                 if len(new_message.payload) == 10:
-                    self.__heater_status = new_message.payload[0]
-                    self.__heater_temperature = new_message.payload[3]
-                    self.__external_temperature = new_message.payload[4]
-                    self.__battery_voltage = new_message.payload[6]
+                    self.__heater_status = (new_message.payload[0], time.time())
+                    self.__heater_temperature = (new_message.payload[3], time.time())
+                    self.__external_temperature = (new_message.payload[4], time.time())
+                    self.__battery_voltage = (new_message.payload[6]/10, time.time())
                 self.logger.info('Heater reports status ({})'.format(new_message.payload.hex()))
             elif new_message.msg_id2 == 0x11:
                 self.logger.info('Heater confirms panel temperature {} °C'.format(new_message.payload[0]))
             elif new_message.msg_id2 == 0x23:
+                self.__ventilation_on = True
                 self.logger.info('Heater confirms turning ventilation on ({})'.format(new_message.payload.hex()))   
             elif new_message.msg_id2 == 0x1c:
                 self.logger.info('Heater responds to initialization message')
             else:
-              self.logger.warning('Unknown message {}'.format(message.hex()))
-        
+                self.logger.warning('Unknown message from heater: {}'.format(message.hex()))
+        else:
+            self.logger.warning('Unknown device id: {}'.format(message.hex()))
+
         return 1
-                
 
         
     def __worker_thread(self):
         self.logger.info('Worker started')
 
         while True:
-            if self.__ser1.inWaiting() > 0:
+            if self.__ser1.in_waiting > 0:
                 message = self.__ser1.read(1)
                 if message == b'\x1b':
                     self.__ser2.write(message)
@@ -235,9 +255,9 @@ class AutotermPassthrough(AutotermUtils):
 
                 self.__ser2.write(message)
                 self.logger.debug('Message forwarded (1 >> 2: {})'.format(message.hex()))
-                self.__process_message(message)
+                self.__process_message(message, self.__ser2)
                     
-            if self.__ser2.inWaiting() > 0:
+            if self.__ser2.in_waiting > 0:
                 message = self.__ser2.read(1)
                 if message == b'\x1b':
                     self.__ser1.write(message)
@@ -254,20 +274,23 @@ class AutotermPassthrough(AutotermUtils):
 
                 self.__ser1.write(message)
                 self.logger.debug('Message forwarded (2 >> 1: {})'.format(message.hex()))
-                self.__process_message(message)
+                self.__process_message(message, self.__ser2)
 
-            if len(self.__heater_send)>0 and not self.write_lock and self.__heater_ser != None:
-                message = self.__heater_send.pop(0)
+            if len(self.__send_to_heater) > 0 and not self.write_lock and self.__heater_ser != None:
+                message = self.__send_to_heater.pop(0)
                 self.__heater_ser.write(message)
                 self.write_lock = True
-                self.logger.info('Program sends message to heater ({})'.format(message.hex()))                
+                self.logger.info('Program sends message to heater ({})'.format(message.hex()))
 
-
-            #time.sleep(0.1)
+            if self.__shutdown_request and time.time() > self.__shutdown_timer + self.__shutdown_delay and (self.__heater_on or self.__ventilation_on):
+                message = self.build(0x03,0x03)
+                if message != 0:
+                    self.__send_to_heater.append(message)
+                self.__shutdown_timer = time.time()
             
 
-    def get_panel_temperature(self):
-        return self.__panel_temperature
+    def get_controller_temperature(self):
+        return self.__controller_temperature
     def get_heater_temperature(self):
         return self.__heater_temperature
     def get_external_temperature(self):
@@ -281,22 +304,24 @@ class AutotermPassthrough(AutotermUtils):
     def get_measured_rev(self):
         return self.__measured_rev
 
-    def shut_down(self):
-        message = self.build(0x03,0x03)
-        self.__heater_send.append(message)
-        # opakované zprávy každých 10 s??
+    def shutdown(self):
+        self.__shutdown_request = True
 
     def turn_on_ventilation(self, power):
-        payload = b'\xff\xff' + power.to_bytes(1, byteorder='big') + b'\x00'
+        payload = b'\xff\xff' + power.to_bytes(1, byteorder='big') + b'\x0f'
         message = self.build(0x03, 0x23, payload=payload)
-        self.__heater_send.append(message)
-        #poslat dvakrát??
+        if message != 0:
+            self.__send_to_heater.append(message)
+            self.__send_to_heater.append(message)
+            # Message is sent twice as from the controller
 
     def turn_on_heater(self, mode, setpoint = 0x0f, ventilation = 0x00, power = 0x00):
         payload = b'\xff\xff' + mode.to_bytes(1, byteorder='big') + setpoint.to_bytes(1, byteorder='big') + ventilation.to_bytes(1, byteorder='big') + power.to_bytes(1, byteorder='big')
         message = self.build(0x03, 0x01, payload=payload)
-        self.__heater_send.append(message)
-        #poslat dvakrát??
+        if message != 0:
+            self.__send_to_heater.append(message)
+            self.__send_to_heater.append(message)
+            # Message is sent twice as from the controller
 
 class AutotermController(AutotermUtils):
     def __init__(self, serial_port, baudrate, log_path):

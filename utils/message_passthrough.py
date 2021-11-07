@@ -14,7 +14,7 @@ while True:
         message = ser1.read(1)
         if message != b'\xaa':
             ser2.write(message)
-            print('ERROR: ',a)
+            print('1 >> 2: ERROR: ', message)
             continue
         message += ser1.read(2)
         message += ser1.read(message[-1]+4)
@@ -28,7 +28,7 @@ while True:
         message = ser2.read(1)
         if message != b'\xaa':
             ser1.write(message)
-            print('ERROR: ',a)
+            print('2 >> 1: ERROR: ', message)
             continue
         message += ser2.read(2)
         message += ser2.read(message[-1]+4)
