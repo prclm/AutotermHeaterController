@@ -56,7 +56,7 @@ This message is sent by PC to turn the heater on.
 
 ```
 PC >> H   aa 03 02 00 01 | 00 28 | 27 39
- H >> PC  aa 04 06 00 01 | 00 28 04 0f 00 05 | bdce
+ H >> PC  aa 04 06 00 01 | 00 28 04 0f 00 05 | bd ce
 ```
 
 ### Ventilation mode control:
@@ -69,8 +69,8 @@ PC >> H   aa 03 01 00 08 | 60 | 05 5a
 Or to turn ventilation mode off.
 
 ```
-PC >> H   aa 03 01 00 08 | 00 2d 5a
- H >> PC  aa 04 01 00 08 | 00 ed ef
+PC >> H   aa 03 01 00 08 | 00 | 2d 5a
+ H >> PC  aa 04 01 00 08 | 00 | ed ef
 ```
 
 ### Diagnostic mode:
