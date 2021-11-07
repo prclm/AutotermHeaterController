@@ -10,7 +10,7 @@ import time
 ################
 versionMajor = 0
 versionMinor = 0
-versionPatch = 3
+versionPatch = 4
 ################
 
 class Message:
@@ -160,6 +160,9 @@ class AutotermPassthrough(AutotermUtils):
     def __start_working(self):
         self.__working = True
 
+        self.__settings_timer = time.time()
+        self.__settings_delay = 5               # Sets how often raspberry asks for settings
+        
         # Following values are stored in tuples with timestamp
         self.__heater_mode = (None, None)
         self.__heater_setpoint = (None, None)
@@ -172,6 +175,9 @@ class AutotermPassthrough(AutotermUtils):
         
         self.__send_to_heater = []
 
+        self.__status_timer = time.time()
+        self.__status_delay = 5                 # Sets how often raspberry asks for status
+        
         # Following values are stored in tuples with timestamp
         self.__controller_temperature = (None, None)
         self.__heater_temperature = (None, None)
@@ -258,6 +264,8 @@ class AutotermPassthrough(AutotermUtils):
                 self.__heater_setpoint = (new_message.payload[3], time.time())
                 self.__heater_ventilation = (new_message.payload[4], time.time())
                 self.__heater_power_level = (new_message.payload[5], time.time())
+                # Reset settings timer
+                self.__settings_timer = time.time()
                 self.logger.info('Heater reports settings ({})'.format(new_message.payload.hex()))
             elif new_message.msg_id2 == 0x03:
                 self.logger.info('Heater confirms turn off request')
@@ -271,6 +279,8 @@ class AutotermPassthrough(AutotermUtils):
                     self.__heater_temperature = (new_message.payload[3], time.time())
                     self.__external_temperature = (new_message.payload[4], time.time())
                     self.__battery_voltage = (new_message.payload[6]/10, time.time())
+                    # Reset staus timer
+                    self.__status_timer = time.time()
                 self.logger.info('Heater reports status ({})'.format(new_message.payload.hex()))
             elif new_message.msg_id2 == 0x11:
                 self.logger.info('Heater confirms controller temperature {} °C'.format(new_message.payload[0]))
@@ -346,7 +356,13 @@ class AutotermPassthrough(AutotermUtils):
                         message = self.build(0x03,0x03)
                         if message != 0:
                             self.__send_to_heater.append(message)
-                        self.__shutdown_timer = time.time()            
+                        self.__shutdown_timer = time.time()
+
+                if time.time() > self.__status_timer + self.__status_delay:
+                    self.asks_for_status()
+
+                if time.time() > self.__settings_timer + self.__settings_delay:
+                    self.asks_for_settings()
 
     # Status requests
     def asks_for_status(self):
