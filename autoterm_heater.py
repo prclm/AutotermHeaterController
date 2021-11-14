@@ -275,8 +275,7 @@ class AutotermPassthrough(AutotermUtils):
             # 02 - Controller asks for settings
             elif new_message.msg_id2 == 0x02:
                 if new_message.length == 0:
-                    pass
-                    #self.logger.info('Controller asks for settings')
+                    self.logger.info('Controller asks for settings')
                 else:
                     self.__heater_timer = None
                     self.logger.info('Controller set new settings ({})'.format(new_message.payload[2:].hex()))
@@ -292,13 +291,13 @@ class AutotermPassthrough(AutotermUtils):
                 self.logger.info('Controller asks for software version')
             # 07 - Controller asks for status
             elif new_message.msg_id2 == 0x0f:
-                #self.logger.info('Controller asks for status')
+                self.logger.info('Controller asks for status')
                 pass
             # 11 - Controller reports temperature
             elif new_message.msg_id2 == 0x11:
                 if len(new_message.payload) == 1: 
                     self.__controller_temperature = (new_message.payload[0], time.time())
-                    #self.logger.info('Controller reports temperature {} °C'.format(new_message.payload[0]))
+                    self.logger.info('Controller reports temperature {} °C'.format(new_message.payload[0]))
                 else:
                     self.logger.warning('Controller reports temperature, wrong payload length ({})'.format(new_message.payload.hex()))
             # 1c - Controller sends initialization message
@@ -370,7 +369,7 @@ class AutotermPassthrough(AutotermUtils):
             # 11 - Heater confirms controller temperature
             elif new_message.msg_id2 == 0x11:
                 if len(new_message.payload) == 1:
-                    #self.logger.info('Heater confirms controller temperature {} °C'.format(new_message.payload[0]))
+                    self.logger.info('Heater confirms controller temperature {} °C'.format(new_message.payload[0]))
                     pass
                 else:
                     self.logger.warning('Heater confirms controller temperature, wrong payload length ({})'.format(new_message.payload.hex()))
