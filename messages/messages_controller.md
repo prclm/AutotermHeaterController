@@ -38,19 +38,18 @@ Controller asks for heater status, polls this one periodically.
 ```
 C >> H aa 03 00 00 0f | 58 7c
 H >> C aa 04 0a 00 0f | 00 01 00 1a 7f 00 7b 01 2b 00 | 50 ad
-                        s1 s2 er ht et    bv ft ft
+                        st       ht et    bv ct ct
 ```
-- `s1`: Status
+- `st`: Status
   - `00`: Heater off
   - `01`: Starting
   - `02`: Warming up
   - `03`: Running
   - `04`: Shutting down
-- `er`: Heater errors
 - `ht`: Heater temperature (as single byte in °C)
 - `et`: External temperature (as single byte in °C, 7f when disconnected)
 - `bv`: Battery voltage (as voltage * 10)
-- `ft`: Heater flame temperature (as two bytes, big endian, in Kelvin)
+- `ct`: Heater chamber temperature (as two bytes, big endian, in Kelvin)
 
 ### Controller temperature:
 These messages are used by the controller to report the temperature to the heater. Heater confirms and repeat the same temperature.
