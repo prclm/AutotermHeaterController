@@ -9,8 +9,8 @@ import time
 
 ################
 versionMajor = 0
-versionMinor = 0
-versionPatch = 6
+versionMinor = 1
+versionPatch = 0
 ################
 
 status_text = {0:'heater off', 1:'starting', 2: 'warming up', 3:'running', 4:'shuting down'}
@@ -174,6 +174,7 @@ class AutotermPassthrough(AutotermUtils):
         # Heater info value
         # Following values are stored in tuples with timestamp
         self.__heater_software_version = (None, None, None, None, None)
+        self.__heater_serial_number = (None, None, None)
 
         # Heater settings values
         self.__settings_timer = time.time()
@@ -249,17 +250,17 @@ class AutotermPassthrough(AutotermUtils):
                 if len(new_message.payload) == 72:
                     self.__d_status1 = (new_message.payload[0], time.time())
                     self.__d_status2 = (new_message.payload[1], time.time())
-                    self.__d_counter1 = (int.from_bytes(new_message.payload[7:9],'big'), time.time())
-                    self.__d_counter2 = (int.from_bytes(new_message.payload[10:12],'big'), time.time())
-                    self.__d_defined_rev = (new_message.payload[12], time.time())
-                    self.__d_measured_rev = (new_message.payload[13], time.time())
-                    self.__d_fuel_pump1 = (new_message.payload[15], time.time())
-                    self.__d_fuel_pump2 = (new_message.payload[17], time.time())
-                    self.__d_chamber_temperature = (int.from_bytes(new_message.payload[19:21],'big'), time.time())
-                    self.__d_flame_temperature = (int.from_bytes(new_message.payload[21:23],'big'), time.time())
-                    self.__d_external_temperature = (new_message.payload[25], time.time())
-                    self.__d_heater_temperature = (new_message.payload[26], time.time())
-                    self.__d_battery_voltage = (new_message.payload[28], time.time())
+                    self.__d_counter1 = (int.from_bytes(new_message.payload[5:8],'big'), time.time())
+                    self.__d_counter2 = (int.from_bytes(new_message.payload[8:11],'big'), time.time())
+                    self.__d_defined_rev = (new_message.payload[11], time.time())
+                    self.__d_measured_rev = (new_message.payload[12], time.time())
+                    self.__d_fuel_pump1 = (new_message.payload[14], time.time())
+                    self.__d_fuel_pump2 = (new_message.payload[16], time.time())
+                    self.__d_chamber_temperature = (int.from_bytes(new_message.payload[18:20],'big'), time.time())
+                    self.__d_flame_temperature = (int.from_bytes(new_message.payload[20:22],'big'), time.time())
+                    self.__d_external_temperature = (new_message.payload[24], time.time())
+                    self.__d_heater_temperature = (new_message.payload[25], time.time())
+                    self.__d_battery_voltage = (new_message.payload[27]/10, time.time())
                     self.logger.info('Heater sends diagnostic message ({})'.format(new_message.payload.hex()))
                 else:
                     self.logger.warning('Heater sends diagnostic message, wrong payload length ({})'.format(new_message.payload.hex()))
@@ -283,19 +284,18 @@ class AutotermPassthrough(AutotermUtils):
             elif new_message.msg_id2 == 0x03:
                 self.__heater_timer = None
                 self.logger.info('Controller turns off the heater')
-            # 04 - Controller sends initialization message
+            # 04 - Controller asks for serial number
             elif new_message.msg_id2 == 0x04:
-                self.logger.info('Controller sends initialization message')
+                self.logger.info('Controller asks for serial number')
             # 06 - Controller asks for software version
             elif new_message.msg_id2 == 0x06:
                 self.logger.info('Controller asks for software version')
             # 07 - Controller asks for status
             elif new_message.msg_id2 == 0x0f:
                 self.logger.info('Controller asks for status')
-                pass
             # 11 - Controller reports temperature
             elif new_message.msg_id2 == 0x11:
-                if len(new_message.payload) == 1: 
+                if len(new_message.payload) == 1:
                     self.__controller_temperature = (new_message.payload[0], time.time())
                     self.logger.info('Controller reports temperature {} °C'.format(new_message.payload[0]))
                 else:
@@ -341,9 +341,13 @@ class AutotermPassthrough(AutotermUtils):
             # 03 - Heater confirms turn off request
             elif new_message.msg_id2 == 0x03:
                 self.logger.info('Heater confirms turn off request')
-            # 04 - Heater responds to initialization message
+            # 04 - Heater reports serial number
             elif new_message.msg_id2 == 0x04:
-                self.logger.info('Heater responds to initialization message')
+                if len(new_message.payload) == 5:
+                    self.__heater_serial_number = (int.from_bytes(new_message.payload[0:2],'big') ,int.from_bytes(new_message.payload[2:5],'big') , time.time())
+                    self.logger.info('Heater reports serial number ({})'.format(new_message.payload.hex()))
+                else:
+                    self.logger.warning('Heater reports serial number, wrong payload length ({})'.format(new_message.payload.hex()))
             # 06 - Heater reports software version
             elif new_message.msg_id2 == 0x06:
                 if len(new_message.payload) == 5:
@@ -351,6 +355,17 @@ class AutotermPassthrough(AutotermUtils):
                     self.logger.info('Heater reports software version ({})'.format(new_message.payload.hex()))
                 else:
                     self.logger.warning('Heater reports software version, wrong payload length ({})'.format(new_message.payload.hex()))
+            # 07 - Heater confirms turning on/off diagnostic mode
+            elif new_message.msg_id2 == 0x07:
+                if len(new_message.payload) == 1:
+                    if new_message.payload[0] == 0:
+                        self.logger.info('Heater confirms turning diagnostic mode off')
+                    elif new_message.payload == 1:
+                        self.logger.info('Heater confirms turning diagnostic mode on')
+                    else:
+                        self.logger.warning('Heater confirms turning diagnostic on/off, wrong payload value ({})'.format(new_message.payload.hex()))
+                else:
+                    self.logger.warning('Heater confirms turning diagnostic on/off, wrong payload length ({})'.format(new_message.payload.hex()))
             # 0f - Heater reports status
             elif new_message.msg_id2 == 0x0f:
                 if len(new_message.payload) == 10:
@@ -370,7 +385,6 @@ class AutotermPassthrough(AutotermUtils):
             elif new_message.msg_id2 == 0x11:
                 if len(new_message.payload) == 1:
                     self.logger.info('Heater confirms controller temperature {} °C'.format(new_message.payload[0]))
-                    pass
                 else:
                     self.logger.warning('Heater confirms controller temperature, wrong payload length ({})'.format(new_message.payload.hex()))
             # 1c - Heater responds to initialization message
@@ -463,7 +477,7 @@ class AutotermPassthrough(AutotermUtils):
 
     # Heater and ventilation controlling
     def get_heater_timer(self):
-        return self.__heater.timer
+        return self.__heater_timer
     def set_heater_timer(self, timer):
         self.__heater_timer = time.time() + (timer * 60) 
     def shutdown(self):
@@ -547,6 +561,7 @@ class AutotermPassthrough(AutotermUtils):
         message = self.build(0x03, 0x11, payload=payload)
         if message != 0:
             self.__send_to_heater.append(message)
+            self.__controller_temperature = temperature
     def get_controller_temperature(self):
         return self.__controller_temperature
             
