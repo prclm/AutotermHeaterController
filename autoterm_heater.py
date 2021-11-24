@@ -10,7 +10,7 @@ import time
 ################
 versionMajor = 0
 versionMinor = 1
-versionPatch = 0
+versionPatch = 1
 ################
 
 status_text = {0:'heater off', 1:'starting', 2: 'warming up', 3:'running', 4:'shuting down'}
@@ -96,7 +96,8 @@ class AutotermPassthrough(AutotermUtils):
         self.logger.info('AutotermPassthrough v {}.{}.{} is starting.'.format(versionMajor, versionMinor, versionPatch))
 
         self.__connected = False
-        self.__connect()
+        while not self.__connected:
+            self.__connect()
 
         self.__working = False
         self.__start_working()
@@ -107,63 +108,81 @@ class AutotermPassthrough(AutotermUtils):
                 self.logger.critical('Cannot send whole message to serial port {}!'.format(ser_port.port))
         except serial.serialutil.SerialException:
             self.__connected = False
-            self.logger.critical('Cannot write to serial port {}!'.format(ser_port.port))
+            self.logger.error('Cannot write to serial port {}!'.format(ser_port.port))
 
     def __message_waiting(self, ser_port):
         try:
             return ser_port.in_waiting
         except OSError:
             self.__connected = False
-            self.logger.critical('Cannot check serial port {} for incomming messages!'.format(ser_port.port))
+            self.logger.error('Cannot check serial port {} for incomming messages!'.format(ser_port.port))
             return 0
         self.__ser2.close()
         
     def __connect(self):
-        while not self.__connected:
-            if self.serial_num:
-                # Search for USB devices based on serial number
-                ports = [port.device for port in list_ports.comports() if port.serial_number == self.serial_num]
-                if len(ports) == 2:
-                    self.port1 = ports[0]
-                    self.port2 = ports[1]
-            if not self.port1 or not self.port2:
-                # Raise error!
-                pass
-                    
+        if self.serial_num:
+            # Search for USB devices based on serial number
+            ports = [port.device for port in list_ports.comports() if port.serial_number == self.serial_num]
+            if len(ports) == 0:
+                self.logger.error('No serial adapters were found!')
+            elif len(ports) == 1:
+                self.port1 = ports[0]
+                self.port2 = None
+                self.logger.info('One serial adapter was found')
+            elif len(ports) == 2:
+                self.port1 = ports[0]
+                self.port2 = ports[1]
+                self.logger.info('Two serial adapters were found')
+            else:
+                self.logger.error('More than two serial adapters were found!')
+
+        # Try to connect to one or both adapters
+        if self.port1:            
             try:
                 self.__ser1 = serial.Serial(self.port1, self.baudrate1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.5, write_timeout=0.5)
-                self.__ser2 = serial.Serial(self.port2, self.baudrate2, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.5, write_timeout=0.5)
-
                 self.__ser1.reset_input_buffer()
-                self.__ser2.reset_input_buffer()
-
-                self.__write_lock_timer = time.time()
-                self.__write_lock_delay = 10
 
                 self.__connected = True
 
-                self.__ser_heater = None
-                self.__ser_controller = None
-
                 self.logger.info('Serial connection to '+self.port1+' established')
-                self.logger.info('Serial connection to '+self.port2+' established')
 
             except serial.serialutil.SerialException:
                 self.logger.critical('Cannot connect to serial port!')
                 time.sleep(10)
 
+        if self.port2:
+            try:
+                self.__ser2 = serial.Serial(self.port2, self.baudrate2, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.5, write_timeout=0.5)
+                self.__ser2.reset_input_buffer()
+
+                self.logger.info('Serial connection to '+self.port2+' established')
+
+            except serial.serialutil.SerialException:
+                self.logger.error('Cannot connect to serial port!')
+                time.sleep(10)
+
+        self.__write_lock_timer = None
+        self.__write_lock_delay = 10
+
+        self.__ser_heater = None
+        self.__ser_controller = None
+
     def __disconnect(self):
-        self.__ser1.close()
-        self.__ser2.close()
+        if self.__ser1:
+            self.__ser1.close()
+        if self.__ser2:
+            self.__ser2.close()
+        self.__connected = False
 
     def __reconnect(self):
         self.__disconnect()
-        self.__connect()
+        while not self.__connected:
+            self.__connect()
 
     def __start_working(self):
         self.__working = True
 
-        # Buffer for message 
+        # Buffer for messages 
         self.__send_to_heater = []
 
         self.__heater_timer = None
@@ -313,7 +332,7 @@ class AutotermPassthrough(AutotermUtils):
         # New message is from heater
         elif new_message.device == 0x04:
             # Response from heater received, can send other messages
-            self.__write_lock_timer = time.time()
+            self.__write_lock_timer = None
             # 01 - Heater confirms starting up
             if   new_message.msg_id2 == 0x01:
                 if len(new_message.payload) == 6:
@@ -444,7 +463,12 @@ class AutotermPassthrough(AutotermUtils):
                     self.logger.debug('Message forwarded (2 >> 1: {})'.format(message.hex()))
                     self.__process_message(message, self.__ser2)
 
-                if len(self.__send_to_heater) > 0 and self.__write_lock_timer <= time.time():
+                if self.__write_lock_timer:
+                    if time.time() >= self.__write_lock_timer:
+                        self.logger.error('Write lock timer has expired, the heater did not respond'.format(message.hex()))
+                        self.__write_lock_timer = None
+
+                if len(self.__send_to_heater) > 0 and not self.__write_lock_timer:
                     message = self.__send_to_heater.pop(0)
                     if self.__ser_heater:
                         self.__write_message(self.__ser_heater, message)
@@ -468,10 +492,10 @@ class AutotermPassthrough(AutotermUtils):
                             self.__send_to_heater.append(message)
                         self.__shutdown_timer = time.time()
 
-                if time.time() >= self.__status_timer + self.__status_delay and self.__write_lock_timer <= time.time():
+                if time.time() >= self.__status_timer + self.__status_delay and not self.__write_lock_timer:
                     self.asks_for_status()
 
-                if time.time() >= self.__settings_timer + self.__settings_delay and self.__write_lock_timer <= time.time():
+                if time.time() >= self.__settings_timer + self.__settings_delay and not self.__write_lock_timer:
                     self.asks_for_settings()
 
 
