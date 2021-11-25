@@ -10,7 +10,7 @@ import time
 ################
 versionMajor = 0
 versionMinor = 1
-versionPatch = 1
+versionPatch = 2
 ################
 
 status_text = {0:'heater off', 1:'starting', 2: 'warming up', 3:'running', 4:'shuting down'}
@@ -58,7 +58,7 @@ class AutotermUtils:
         if package[-2:] != self.crc16(package[:-2]):
             self.logger.error('Parse: invalid crc of package! ({})'.format(package.hex()))
             return 0
-        
+
         return Message(package[0], package[1], package[2], package[3], package[4], package[5:-2])
 
     def build(self, device, msg_id2, msg_id1=0x00, payload = b''):
@@ -73,7 +73,7 @@ class AutotermUtils:
             return 0
 
         package = b'\xaa'+device.to_bytes(1, byteorder='big')+len(payload).to_bytes(1, byteorder='big')+msg_id1.to_bytes(1, byteorder='big')+msg_id2.to_bytes(1, byteorder='big')+payload
-        
+
         return package + self.crc16(package)
 
 
@@ -118,13 +118,14 @@ class AutotermPassthrough(AutotermUtils):
             self.logger.error('Cannot check serial port {} for incomming messages!'.format(ser_port.port))
             return 0
         self.__ser2.close()
-        
+
     def __connect(self):
         if self.serial_num:
             # Search for USB devices based on serial number
             ports = [port.device for port in list_ports.comports() if port.serial_number == self.serial_num]
             if len(ports) == 0:
                 self.logger.error('No serial adapters were found!')
+                time.sleep(10)
             elif len(ports) == 1:
                 self.port1 = ports[0]
                 self.port2 = None
@@ -135,9 +136,10 @@ class AutotermPassthrough(AutotermUtils):
                 self.logger.info('Two serial adapters were found')
             else:
                 self.logger.error('More than two serial adapters were found!')
+                time.sleep(10)
 
         # Try to connect to one or both adapters
-        if self.port1:            
+        if self.port1:
             try:
                 self.__ser1 = serial.Serial(self.port1, self.baudrate1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.5, write_timeout=0.5)
                 self.__ser1.reset_input_buffer()
@@ -283,8 +285,8 @@ class AutotermPassthrough(AutotermUtils):
                     self.logger.info('Heater sends diagnostic message ({})'.format(new_message.payload.hex()))
                 else:
                     self.logger.warning('Heater sends diagnostic message, wrong payload length ({})'.format(new_message.payload.hex()))
-            
-        # New message is from controller    
+
+        # New message is from controller
         elif new_message.device == 0x03:
             # Do not send messages, waiting for response from the heater
             self.__write_lock_timer = time.time() + self.__write_lock_delay
@@ -445,7 +447,7 @@ class AutotermPassthrough(AutotermUtils):
                     self.__write_message(self.__ser2, message)
                     self.logger.debug('Message forwarded (1 >> 2: {})'.format(message.hex()))
                     self.__process_message(message, self.__ser1)
-                        
+
                 if self.__message_waiting(self.__ser2) > 0:
                     message = self.__ser2.read(1)
                     if message == b'\x1b':
@@ -478,7 +480,7 @@ class AutotermPassthrough(AutotermUtils):
                         self.__write_message(self.__ser2, message)
                         self.logger.warning('Program sends message to both adapters ({})'.format(message.hex()))
                     self.__write_lock_timer = time.time() + self.__write_lock_delay
-                    
+
                 if self.__heater_timer:
                     if time.time() >= self.__heater_timer:
                         self.shutdown()
@@ -503,7 +505,7 @@ class AutotermPassthrough(AutotermUtils):
     def get_heater_timer(self):
         return self.__heater_timer
     def set_heater_timer(self, timer):
-        self.__heater_timer = time.time() + (timer * 60) 
+        self.__heater_timer = time.time() + (timer * 60)
     def shutdown(self):
         self.__shutdown_request = True
     def turn_on_ventilation(self, power, timer = None):
@@ -535,12 +537,18 @@ class AutotermPassthrough(AutotermUtils):
             # Message is sent twice as from the controller
 
     # Heater info
-    def asks_for_heater_software_version(self):
+    def ask_for_heater_software_version(self):
         message = self.build(0x03, 0x06)
         if message != 0:
             self.__send_to_heater.append(message)
     def get_heater_software_version(self):
         return self.__heater_software_version
+    def ask_for_heater_serial_number(self):
+        message = self.build(0x03, 0x04)
+        if message != 0:
+            self.__send_to_heater.append(message)
+    def get_heater_serial_number(self):
+        return self.__heater_serial_number
 
     # Heater settings
     def asks_for_settings(self):
@@ -555,7 +563,7 @@ class AutotermPassthrough(AutotermUtils):
         return self.__heater_ventilation
     def get_heater_power_level(self):
         return self.__heater_power_level
-    
+
     # Heater status
     def asks_for_status(self):
         message = self.build(0x03, 0x0f)
@@ -588,11 +596,6 @@ class AutotermPassthrough(AutotermUtils):
             self.__controller_temperature = temperature
     def get_controller_temperature(self):
         return self.__controller_temperature
-            
-    def get_defined_rev(self):
-        return self.__defined_rev
-    def get_measured_rev(self):
-        return self.__measured_rev
 
     # Diagnostic
     def diagnostic_on(self):
@@ -609,7 +612,7 @@ class AutotermPassthrough(AutotermUtils):
         message = self.build(0x03, 0x0d)
         if message != 0:
             self.__send_to_heater.append(message)
-    def get_d_status(self):	
+    def get_d_status(self):
         return (self.__d_status1, self.__d_status2)
     def get_d_counter1(self):
         return self.__d_counter1
